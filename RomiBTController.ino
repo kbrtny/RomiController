@@ -1,10 +1,17 @@
 
 #include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
 #include <PS4Controller.h>
 #include "romi_registers.h"
 #include "secrets.h"
 
 #define I2C_DEV_ADDR 20
+
+#define SERVOMIN  150 // This is the 'minimum' pulse length count (out of 4096)
+#define SERVOMAX  600 // This is the 'maximum' pulse length count (out of 4096)
+#define USMIN  600 // This is the rounded 'minimum' microsecond length based on the minimum pulse of 150
+#define USMAX  2400 // This is the rounded 'maximum' microsecond length based on the maximum pulse of 600
+#define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
 
 struct Data
 {
@@ -23,9 +30,10 @@ struct Data
 };
 
 Data slave;
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 uint16_t gripValue = 600; //550 = open, 2350 = closed
 uint16_t tiltValue = 1540; //1380 = most down, 1770 = most up
-uint16_t liftValue = 1790; //800 = lowest, 1790 = highest
+uint16_t liftValue = 1750; //800 = lowest, 1750 = highest
 int16_t leftMotor = 0;
 int16_t rightMotor = 0;
 int8_t mode = 1;
@@ -85,9 +93,16 @@ void setup()
 {
   Wire.begin();
   Serial.begin(115200);
-  PS4.begin("58:24:29:52:c1:c1");
+  PS4.begin(mac);
+  pwm.begin();
   Serial.println("Ready.");
 
+  pwm.setOscillatorFrequency(27000000);
+  pwm.setPWMFreq(SERVO_FREQ);  // Analog servos run at ~50 Hz updates
+  delay(10);
+  pwm.writeMicroseconds(0, liftValue);
+  pwm.writeMicroseconds(1, tiltValue);
+  pwm.writeMicroseconds(2, gripValue);
 }
 
 void loop()
@@ -140,18 +155,18 @@ void loop()
       rightMotor = 60;
     }
     if (PS4.Triangle()) {
-      liftValue -= 17;
-      tiltValue -= 4;
+      liftValue -= 8;
+      tiltValue -= 2;
     }
     if (PS4.Cross()) {
-      liftValue += 17;
-      tiltValue += 4;
+      liftValue += 8;
+      tiltValue += 2;
     }
     if (PS4.Square()) {
-      gripValue += 30;
+      gripValue += 15;
     }
     if (PS4.Circle()) {
-      gripValue -= 30;
+      gripValue -= 15;
     }
     /*if (PS4.L1()){
       tiltValue -= 10;
@@ -159,10 +174,12 @@ void loop()
     if (PS4.R1()){
       tiltValue += 10;
     }*/
-    liftValue = constrain(liftValue, 1110, 1790);
+    liftValue = constrain(liftValue, 1110, 1750);
+	pwm.writeMicroseconds(0, liftValue);
     tiltValue = constrain(tiltValue, 1380, 1540);
+	pwm.writeMicroseconds(1, tiltValue);
     gripValue = constrain(gripValue, 550, 1800);
-    romi_setServos(liftValue,tiltValue,gripValue);
+	pwm.writeMicroseconds(2, gripValue);
     romi_setMotors(leftMotor*mode,rightMotor*mode);  
     if (slave.batteryMillivolts < 7000){
       PS4.setLed(255, 0, 0);
@@ -170,19 +187,19 @@ void loop()
       PS4.setLed(0, 255, 0);
     }  
     PS4.sendToController();
+	romi_getBattery();
+	//Serial.print("Batt V: ");
+	//Serial.println(slave.batteryMillivolts);
+	Serial.printf("H: %d , T: %d , G: %d\n", liftValue, tiltValue, gripValue);
+	/*romi_getAnalogs();
+	Serial.print("Analog: ");
+	Serial.print((float)slave.analog[0]/1024*5);
+	Serial.print(" , ");
+	Serial.print((float)slave.analog[3]/1024*5);
+	Serial.print(" , ");
+	Serial.println((float)slave.analog[4]/1024*5);
+	*/
   }
-  
-  romi_getBattery();
-  //Serial.print("Batt V: ");
-  //Serial.println(slave.batteryMillivolts);
-  Serial.printf("H: %d , T: %d , G: %d\n", liftValue, tiltValue, gripValue);
-  /*romi_getAnalogs();
-  Serial.print("Analog: ");
-  Serial.print((float)slave.analog[0]/1024*5);
-  Serial.print(" , ");
-  Serial.print((float)slave.analog[3]/1024*5);
-  Serial.print(" , ");
-  Serial.println((float)slave.analog[4]/1024*5);
-  */
-  delay(100);
+
+  delay(50);
 }
